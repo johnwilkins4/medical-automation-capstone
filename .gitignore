@@ -1,0 +1,33 @@
+# Secrets — NEVER commit these
+.env
+.streamlit/secrets.toml
+
+# Python virtual env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Local logs / scratch
+*.log
+*.bak
+
+# Smoke / scratch test scripts (never shipped)
+_smoke_test_*.py
+_test_*.py
+
+# SQLite journals (the .db itself IS committed for the demo)
+*.db-journal
+
+# Eval results that contain a generated timestamp; safe to omit
+eval/last_results.json
+
+# python-docx temp scratch
+~$*.docx
