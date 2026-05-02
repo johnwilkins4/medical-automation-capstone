@@ -107,3 +107,4 @@ A synthetic patient "Mr. Harish Kumar" (70M, CKD stage 3b) is seeded into the DB
 ## Disclaimer
 
 All patient data is synthetic. Medical content is demo material, not clinical guidance.
+# medical-automation-capstone
