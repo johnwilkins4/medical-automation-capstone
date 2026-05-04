@@ -37,6 +37,13 @@ def _resolve_secret(name: str, default: str = "") -> str:
 OPENAI_API_KEY = _resolve_secret("OPENAI_API_KEY", "")
 LLM_MODEL = _resolve_secret("LLM_MODEL", "gpt-4o-mini")
 EMBEDDING_MODEL = _resolve_secret("EMBEDDING_MODEL", "text-embedding-3-small")
+
+# OpenAI's SDK reads OPENAI_API_KEY from os.environ. When the key was
+# resolved from Streamlit's st.secrets (cloud deploy), it isn't in the
+# environment yet — push it there so ChatOpenAI / OpenAIEmbeddings pick it up
+# without us threading api_key through every call site.
+if OPENAI_API_KEY and not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 # Streamlit-Cloud-only: an optional shared passcode that gates the chat tab.
 # Leave unset for an open URL.
 APP_PASSCODE = _resolve_secret("APP_PASSCODE", "")
