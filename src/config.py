@@ -68,8 +68,21 @@ DEFAULT_SLOT_WINDOW_DAYS = 7
 
 
 def require_openai_key() -> str:
-    if not OPENAI_API_KEY:
+    """Return the OpenAI API key, re-resolving from os.environ / st.secrets at
+    call time so we don't depend on what was available at module-import time.
+
+    On Streamlit Community Cloud, st.secrets may not be fully populated when
+    config.py is first imported, which could leave the module-level
+    OPENAI_API_KEY constant empty even though the secret is genuinely set.
+    Re-resolving here picks it up reliably and also bridges it into
+    os.environ so downstream OpenAI clients can find it.
+    """
+    key = _resolve_secret("OPENAI_API_KEY", "")
+    if not key:
         raise RuntimeError(
-            "OPENAI_API_KEY is not set. Copy .env.example to .env and add your key."
+            "OPENAI_API_KEY is not set. Either set it in .env locally, or in "
+            "Streamlit Cloud's app Settings → Secrets."
         )
-    return OPENAI_API_KEY
+    if not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = key
+    return key
