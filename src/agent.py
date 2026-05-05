@@ -439,12 +439,93 @@ def _preview(value: Any, max_chars: int = 300) -> str:
 
 # ---- Composer node ----------------------------------------------------------
 
+# Step-output fields that may carry PHI. When verification has failed for a
+# patient referenced in the query, these are stripped from the composer's
+# context so it physically cannot mention them in the reply.
+_PHI_OUTPUT_FIELDS = {
+    "name", "patient_name", "age", "gender", "phone", "email",
+    "address", "summary", "city",
+    "doctor_name", "doctor_id", "specialty", "location",
+    "slot_time", "appt_id", "slot_id",
+}
+
+
+def _redact_for_failed_auth(step_results: list[dict]) -> list[dict]:
+    """Strip PHI from step outputs when authorization failed in this run.
+
+    Rationale: prompt-level instructions to "not mention the patient's name"
+    are not sufficient — LLMs occasionally slip. The composer should not
+    have access to the patient's identifying details in the first place,
+    so a slip becomes physically impossible. medical_info_search results
+    are kept intact because they are intentionally public knowledge.
+    Other tool calls (lookup_patient, verify_caller, blocked PHI tools)
+    are reduced to non-PHI metadata.
+    """
+    redacted: list[dict] = []
+    for s in step_results:
+        tool = s.get("tool")
+        if tool == "medical_info_search":
+            # Public info — pass through unchanged.
+            redacted.append(s)
+            continue
+        if tool == "verify_caller":
+            out = s.get("output") or {}
+            redacted.append({
+                "step": s.get("step"),
+                "tool": tool,
+                "args": {"caller_name": (s.get("args") or {}).get("caller_name")},
+                "output": {
+                    "authorized": out.get("authorized"),
+                    "office_phone": out.get("office_phone"),
+                    "reason": out.get("reason"),
+                },
+                "success": s.get("success"),
+            })
+            continue
+        # Everything else (lookup_patient, blocked PHI tools): keep only
+        # whether it was blocked + the reason + the office phone.
+        out = s.get("output") or {}
+        if isinstance(out, dict) and out.get("blocked"):
+            redacted.append({
+                "step": s.get("step"),
+                "tool": tool,
+                "blocked": True,
+                "reason": out.get("reason"),
+                "office_phone": out.get("office_phone"),
+            })
+        else:
+            redacted.append({
+                "step": s.get("step"),
+                "tool": tool,
+                "redacted": True,
+                "note": ("Output suppressed because the caller could not be "
+                         "verified as authorized for this patient."),
+            })
+    return redacted
+
+
+def _auth_failed(step_results: list[dict]) -> bool:
+    for s in step_results:
+        if s.get("blocked_by_gate") and (s.get("output") or {}).get("reason") == "not_authorized":
+            return True
+        if s.get("tool") == "verify_caller":
+            out = s.get("output") or {}
+            if isinstance(out, dict) and out.get("authorized") is False:
+                return True
+    return False
+
+
 def _compose_node(state: AgentState) -> AgentState:
     llm = ChatOpenAI(model=LLM_MODEL, temperature=0)
+    step_results = state.get("step_results", []) or []
+    if _auth_failed(step_results):
+        step_results_for_composer = _redact_for_failed_auth(step_results)
+    else:
+        step_results_for_composer = step_results
     prompt = FINAL_COMPOSER_PROMPT.format(
         user_query=state["user_query"],
         plan=json.dumps(state.get("plan", []), default=str, indent=2),
-        step_results=json.dumps(state.get("step_results", []), default=str, indent=2),
+        step_results=json.dumps(step_results_for_composer, default=str, indent=2),
     )
     resp = llm.invoke([HumanMessage(content=prompt)])
     state["final_answer"] = resp.content.strip()
